@@ -1,0 +1,7 @@
+langflow>=1.0.0
+requests>=2.31.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+python-dateutil>=2.9.0
+ollama>=0.4.0
