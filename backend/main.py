@@ -343,7 +343,6 @@ def serialize_message(m) -> dict:
 
 def save_db_session(session: dict):
     ctx = session["booking_context"]
-    # Auto update title dynamically with Name - Problem - Date
     parts = []
     if ctx.get("patient_name"):
         parts.append(ctx["patient_name"])
@@ -361,7 +360,7 @@ def save_db_session(session: dict):
         session["title"] = "New Booking Chat"
         
     serialized_messages = [serialize_message(m) for m in session["messages"]]
-    # Update in-memory messages to prevent serializing objects repeatedly
+
     session["messages"] = serialized_messages
 
     with get_conn() as conn:
@@ -503,7 +502,7 @@ def chat_endpoint(req: ChatRequest):
         }
 
     if req.is_doctor:
-        # Doctor directly talks to the patient - bypass LLM agent
+   
         doc_msg = {"role": "assistant", "content": req.message, "is_doctor": True}
         session["messages"].append(doc_msg)
         save_db_session(session)

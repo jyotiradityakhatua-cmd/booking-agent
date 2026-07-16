@@ -56,7 +56,7 @@ export async function startSession(username) {
   if (!resp.ok) {
     throw new Error('Failed to start session');
   }
-  return resp.json(); // returns { session_id, greeting }
+  return resp.json(); 
 }
 
 export async function sendChatMessage(message, sessionId, username, isDoctor = false) {
@@ -68,7 +68,7 @@ export async function sendChatMessage(message, sessionId, username, isDoctor = f
   if (!resp.ok) {
     throw new Error('Failed to send message');
   }
-  return resp.json(); // returns { session_id, reply }
+  return resp.json(); 
 }
 
 export async function getSlots(dateStr) {
@@ -77,7 +77,7 @@ export async function getSlots(dateStr) {
     const errData = await resp.json().catch(() => ({}));
     throw new Error(errData.detail || 'Failed to fetch slots');
   }
-  return resp.json(); // returns SlotsResponse
+  return resp.json(); 
 }
 
 export async function getBookings(username = '') {
@@ -89,7 +89,7 @@ export async function getBookings(username = '') {
   if (!resp.ok) {
     throw new Error('Failed to fetch bookings');
   }
-  return resp.json(); // returns list of bookings
+  return resp.json(); 
 }
 
 export async function cancelBooking(bookingId, role = 'patient') {
@@ -138,5 +138,36 @@ export async function rejectSessionBooking(sessionId) {
   if (!resp.ok) {
     throw new Error('Failed to reject session booking');
   }
+  return resp.json();
+}
+
+
+export async function blockSlot(date, time_slot) {
+  const resp = await fetch(`${BASE_URL}/book`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      date,
+      time_slot,
+      patient_name: '__BLOCKED__',
+      problem: 'Blocked by doctor',
+      username: '__doctor__',
+    }),
+  });
+  if (!resp.ok) {
+    const errData = await resp.json().catch(() => ({}));
+    const detail = errData.detail;
+
+    if (resp.status === 409) return { already_blocked: true };
+    throw new Error((typeof detail === 'string' ? detail : detail?.message) || 'Failed to block slot');
+  }
+  return resp.json();
+}
+
+
+ 
+export async function getBookingsByDate(date) {
+  const resp = await fetch(`${BASE_URL}/bookings?date=${encodeURIComponent(date)}`);
+  if (!resp.ok) throw new Error('Failed to fetch bookings for date');
   return resp.json();
 }

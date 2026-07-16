@@ -7,7 +7,7 @@ DB_PATH = Path(__file__).parent / "bookings.db"
 
 def init_db():
     with get_conn() as conn:
-        # Create users table
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -16,7 +16,7 @@ def init_db():
             )
             """
         )
-        # Create sessions table
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (
@@ -30,13 +30,13 @@ def init_db():
             )
             """
         )
-        # Alter bookings table if needed to add username column
+
         try:
             conn.execute("ALTER TABLE bookings ADD COLUMN username TEXT DEFAULT 'guest'")
         except sqlite3.OperationalError:
             pass
 
-        # Create bookings table if not exists (safeguard)
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS bookings (

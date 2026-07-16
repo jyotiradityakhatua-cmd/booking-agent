@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Stethoscope, MessageSquare, Plus, Trash2, LogOut, RefreshCw, Calendar, Clock } from 'lucide-react';
+import { Stethoscope, MessageSquare, Plus, Trash2, LogOut, RefreshCw, Calendar, Clock, User, FileText, CheckCircle } from 'lucide-react';
 import ChatPanel from './components/ChatPanel';
 import LoginPanel from './components/LoginPanel';
+import DoctorDashboard from './components/DoctorDashboard';
 import { getSessions, deleteSession, startSession, getBookings, cancelBooking } from './utils/api';
 
 function App() {
   const [user, setUser] = useState(() => localStorage.getItem('medsync_user'));
-  const [role, setRole] = useState(() => localStorage.getItem('medsync_role')); // 'patient' or 'doctor'
+  const [role, setRole] = useState(() => localStorage.getItem('medsync_role'));
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [loadingBookings, setLoadingBookings] = useState(false);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshTimerRef = useRef(null);
 
   const sessionsRef = useRef(sessions);
   const activeSessionIdRef = useRef(activeSessionId);
@@ -41,16 +45,16 @@ function App() {
     localStorage.removeItem('medsync_role');
   };
 
-  // Fetch session list depending on role
+
   const fetchSessionsList = async (targetRole, targetUser) => {
     if (!targetUser) return;
     setLoadingSessions(true);
     try {
-      // If doctor, fetch ALL sessions. If patient, fetch ONLY user's sessions.
+
       const list = await getSessions(targetRole === 'doctor' ? '' : targetUser);
       setSessions(list);
-      
-      // Auto-select first session if none is active
+
+
       if (list.length > 0 && !activeSessionId) {
         setActiveSessionId(list[0].session_id);
       }
@@ -61,7 +65,7 @@ function App() {
     }
   };
 
-  // Fetch bookings (all bookings for doctor, user's own bookings for patient)
+
   const fetchBookingsList = async () => {
     if (!user) return;
     setLoadingBookings(true);
@@ -75,18 +79,23 @@ function App() {
     }
   };
 
-  // Set up polling to check if the Doctor cancelled/deleted the session
+
   useEffect(() => {
     if (!user || !role) return;
 
-    // Initial fetch
+
     fetchSessionsList(role, user);
     fetchBookingsList();
 
     const interval = setInterval(async () => {
+
+      setRefreshing(true);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => setRefreshing(false), 700);
+
       try {
         const list = await getSessions(role === 'doctor' ? '' : user);
-        
+
         if (role === 'patient' && activeSessionIdRef.current) {
           const sessionStillExists = list.some((s) => s.session_id === activeSessionIdRef.current);
           if (!sessionStillExists && sessionsRef.current.length > 0) {
@@ -97,9 +106,9 @@ function App() {
             }
           }
         }
-        
+
         setSessions(list);
-        
+
         const bookingsData = await getBookings(role === 'doctor' ? '' : user);
         setBookings(bookingsData);
       } catch (err) {
@@ -107,10 +116,13 @@ function App() {
       }
     }, 4000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
   }, [user, role]);
 
-  // Start new booking chat session (Patient only)
+
   const handleNewChat = async () => {
     if (!user) return;
     try {
@@ -123,7 +135,7 @@ function App() {
     }
   };
 
-  // Delete chat session
+
   const handleDeleteSession = async (e, sessionId) => {
     e.stopPropagation();
     if (!window.confirm('Are you sure you want to delete this chat session?')) {
@@ -141,7 +153,7 @@ function App() {
     }
   };
 
-  // Cancel booking (Doctor only)
+
   const handleCancelBooking = async (bookingId) => {
     if (!window.confirm('Are you sure you want to cancel this booking slot?')) {
       return;
@@ -149,17 +161,22 @@ function App() {
     try {
       await cancelBooking(bookingId, role);
       fetchBookingsList();
-      // Also refresh sessions to reflect cancellation in chat if active
       fetchSessionsList(role, user);
     } catch (err) {
       alert('Failed to cancel booking: ' + err.message);
     }
   };
 
-  // Callback when booking or action is confirmed in ChatPanel
+
   const handleChatTriggerRefresh = () => {
     fetchSessionsList(role, user);
     fetchBookingsList();
+  };
+
+
+  const handleDoctorRefresh = () => {
+    fetchBookingsList();
+    fetchSessionsList(role, user);
   };
 
   if (!user) {
@@ -176,6 +193,41 @@ function App() {
     );
   }
 
+
+  if (role === 'doctor') {
+    return (
+      <>
+        <header className="app-header">
+          <div className="brand">
+            <Stethoscope size={28} className="brand-icon" />
+            <h1>MedSync Clinic Portal</h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="header-status">
+              <span className="status-dot"></span>
+              <span>Dr. {user}</span>
+            </div>
+            <button className="logout-btn" onClick={handleLogout} title="Log Out" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <LogOut size={18} />
+            </button>
+          </div>
+        </header>
+
+        <main style={{ flex: 1, padding: '1.5rem', display: 'flex', justifyContent: 'center', overflowY: 'auto' }}>
+          <div style={{ width: '100%', maxWidth: '1400px' }}>
+            <DoctorDashboard
+              bookings={bookings}
+              loadingBookings={loadingBookings}
+              onRefresh={handleDoctorRefresh}
+              sessions={sessions}
+              refreshing={refreshing}
+            />
+          </div>
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <header className="app-header">
@@ -185,21 +237,33 @@ function App() {
         </div>
         <div className="header-status">
           <span className="status-dot"></span>
-          <span>Welcome, {user} ({role === 'doctor' ? 'Doctor' : 'Patient'})</span>
+          <span>Welcome, {user} (Patient)</span>
         </div>
       </header>
 
       <main className="portal-container">
-        {/* Left Sidebar */}
+        {/* Left Sidebar — Patient booking chats */}
         <aside className="sidebar-panel">
-          {role === 'patient' && (
-            <button className="new-chat-btn" onClick={handleNewChat}>
-              <Plus size={18} /> New Booking Chat
-            </button>
-          )}
+          <button className="new-chat-btn" onClick={handleNewChat}>
+            <Plus size={18} /> New Booking Chat
+          </button>
 
           <div className="session-list-container">
-            <h4 className="sidebar-title">{role === 'doctor' ? 'All User Chats' : 'My Booking Chats'}</h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <h4 className="sidebar-title" style={{ marginBottom: 0 }}>My Booking Chats</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span className="live-dot" />
+                <span style={{
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: '#10b981',
+                  opacity: refreshing ? 1 : 0.55,
+                  transition: 'opacity 0.3s',
+                }}>LIVE</span>
+              </div>
+            </div>
             {loadingSessions && sessions.length === 0 ? (
               <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 Loading chats...
@@ -211,65 +275,89 @@ function App() {
             ) : (
               sessions.map((session) => {
                 const ctx = session.booking_context || {};
-                const hasDetails = ctx.date || ctx.patient_name || ctx.problem;
-                
+
+
+                const matchedBooking = bookings.find(
+                  (b) =>
+                    b.username === session.username &&
+                    b.date === ctx.date &&
+                    b.time_slot === ctx.time_slot
+                );
+
+
+                const date        = ctx.date        || matchedBooking?.date        || null;
+                const time_slot   = ctx.time_slot   || matchedBooking?.time_slot   || null;
+                const patient_name = matchedBooking?.patient_name || ctx.patient_name || null;
+                const problem      = matchedBooking?.problem      || ctx.problem      || null;
+
+                const hasAny = date || time_slot || patient_name || problem;
+
                 return (
                   <div
                     key={session.session_id}
                     className={`session-item-row ${activeSessionId === session.session_id ? 'active' : ''}`}
                     onClick={() => setActiveSessionId(session.session_id)}
-                    style={{ 
-                      flexDirection: 'column', 
-                      alignItems: 'stretch', 
-                      padding: '0.85rem',
-                      height: 'auto',
-                      gap: '0.35rem'
-                    }}
+                    style={{ flexDirection: 'column', alignItems: 'stretch', padding: '0.85rem', height: 'auto', gap: '0.5rem' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
-                      <div className="session-item-info" style={{ flex: 1, minWidth: 0 }}>
-                        <MessageSquare size={14} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--primary)' }} />
-                        <span className="session-item-title" style={{ fontSize: '0.82rem', fontWeight: 600, color: 'white' }}>
-                          {role === 'doctor'
-                            ? (() => {
-                                const parts = [];
-                                if (ctx.patient_name) parts.push(ctx.patient_name);
-                                if (ctx.problem) parts.push(ctx.problem);
-                                if (ctx.date) parts.push(`${ctx.date}${ctx.time_slot ? ` @ ${ctx.time_slot}` : ''}`);
-                                return parts.length > 0
-                                  ? parts.join(' · ')
-                                  : `${session.username} — pending`;
-                              })()
-                            : (ctx.date ? `${ctx.date}${ctx.time_slot ? ` @ ${ctx.time_slot}` : ''}` : 'New Booking Chat')}
+                    {/* Top row: icon + title + delete btn */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: 1, minWidth: 0 }}>
+                        <MessageSquare size={13} style={{ flexShrink: 0, color: 'var(--primary)', opacity: 0.85 }} />
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {date ? `${date}${time_slot ? ` @ ${time_slot}` : ''}` : 'New Booking Chat'}
                         </span>
                       </div>
                       <button
                         className="session-delete-btn"
                         onClick={(e) => handleDeleteSession(e, session.session_id)}
                         title="Delete Chat"
-                        style={{ margin: 0, padding: '2px' }}
+                        style={{ margin: 0, padding: '2px', flexShrink: 0 }}
                       >
                         <Trash2 size={12} />
                       </button>
                     </div>
-                    
-                    {hasDetails && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '1.25rem', borderLeft: '1px solid var(--border-color)', marginTop: '2px' }}>
-                        {ctx.time_slot && (
-                          <div style={{ fontSize: '0.72rem', color: '#a5b4fc', fontWeight: 500 }}>
-                            Time: {ctx.time_slot}
+
+                    {/* Detail rows — only shown when booking context exists */}
+                    {hasAny && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '0.25rem' }}>
+
+                        {/* Date + Time */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          {date && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <Calendar size={11} style={{ color: '#a5b4fc', flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.74rem', color: '#a5b4fc', fontWeight: 600 }}>{date}</span>
+                            </div>
+                          )}
+                          {time_slot && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <Clock size={11} style={{ color: '#14b8a6', flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.74rem', color: '#14b8a6', fontWeight: 600 }}>{time_slot}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Patient name */}
+                        {patient_name && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <User size={11} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                            <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>
+                              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Patient: </span>
+                              {patient_name}
+                            </span>
                           </div>
                         )}
-                        {ctx.patient_name && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            <strong>Patient:</strong> {ctx.patient_name}
+
+                        {/* Problem */}
+                        {problem && (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.3rem' }}>
+                            <FileText size={11} style={{ color: '#64748b', flexShrink: 0, marginTop: '1px' }} />
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.35 }}>
+                              "{problem}"
+                            </span>
                           </div>
                         )}
-                        {ctx.problem && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                            "{ctx.problem}"
-                          </div>
-                        )}
+
                       </div>
                     )}
                   </div>
@@ -280,8 +368,8 @@ function App() {
 
           <div className="sidebar-profile">
             <div className="profile-info">
-              <div className="profile-avatar" style={{ backgroundColor: role === 'doctor' ? 'var(--color-booked)' : 'var(--accent-teal)' }}>
-                {role === 'doctor' ? 'Dr' : user.charAt(0).toUpperCase()}
+              <div className="profile-avatar" style={{ backgroundColor: 'var(--accent-teal)' }}>
+                {user.charAt(0).toUpperCase()}
               </div>
               <span className="profile-name" title={user}>{user}</span>
             </div>
@@ -312,19 +400,29 @@ function App() {
                 fontStyle: 'italic',
               }}
             >
-              Select a conversation from the sidebar to view chat history.
+              Select a conversation or start a new booking chat.
             </div>
           )}
         </div>
 
-        {/* Right Sidebar Column (Doctor and Patient Bookings) */}
+        {/* Right Sidebar — Patient Bookings */}
         <aside className="bookings-column">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h3 className="slots-grid-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Calendar size={18} /> {role === 'doctor' ? 'Clinic Bookings' : 'My Bookings'}
+              <Calendar size={18} /> My Bookings
             </h3>
-            <button className="refresh-btn" onClick={fetchBookingsList} disabled={loadingBookings}>
-              <RefreshCw size={14} className={loadingBookings ? 'spin' : ''} />
+            <button
+              className="refresh-btn"
+              onClick={() => {
+                setRefreshing(true);
+                if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+                refreshTimerRef.current = setTimeout(() => setRefreshing(false), 700);
+                fetchBookingsList();
+              }}
+              disabled={loadingBookings}
+              title="Refresh bookings"
+            >
+              <RefreshCw size={14} className={loadingBookings || refreshing ? 'spin' : ''} />
             </button>
           </div>
 
@@ -332,38 +430,54 @@ function App() {
             {loadingBookings && bookings.length === 0 ? (
               <div className="no-bookings">Loading bookings...</div>
             ) : bookings.length === 0 ? (
-              <div className="no-bookings">
-                {role === 'doctor' ? 'No active bookings in the database.' : 'You have no confirmed bookings.'}
-              </div>
+              <div className="no-bookings">You have no confirmed bookings.</div>
             ) : (
               bookings.map((booking) => (
-                <div key={booking.id} className="booking-card" style={{ padding: '0.85rem' }}>
-                  <div className="booking-card-main" style={{ gap: '0.15rem' }}>
-                    <div className="booking-card-title" style={{ fontSize: '0.88rem' }}>
-                      <span>{booking.date}</span>
-                      <span className="booking-time-badge" style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem' }}>
-                        {booking.time_slot}
-                      </span>
-                    </div>
-                    <div className="booking-card-patient" style={{ fontSize: '0.8rem' }}>
-                      <strong>Patient:</strong> {booking.patient_name || 'Anonymous'}
-                    </div>
-                    <div className="booking-card-reason" style={{ fontSize: '0.78rem' }}>
-                      "{booking.problem}"
-                    </div>
-                    {role === 'doctor' && (
-                      <div className="booking-card-reason" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '2px' }}>
-                        User: {booking.username || 'guest'}
-                      </div>
-                    )}
+                <div
+                  key={booking.id}
+                  className="patient-booking-card"
+                >
+                  {/* Confirmed badge */}
+                  <div className="pbc-confirmed-badge">
+                    <CheckCircle size={11} />
+                    Confirmed
                   </div>
+
+                  {/* Date & Time row */}
+                  <div className="pbc-datetime-row">
+                    <div className="pbc-date-pill">
+                      <Calendar size={13} />
+                      <span>{booking.date}</span>
+                    </div>
+                    <div className="pbc-time-pill">
+                      <Clock size={12} />
+                      <span>{booking.time_slot}</span>
+                    </div>
+                  </div>
+
+                  {/* Patient name */}
+                  <div className="pbc-info-row">
+                    <User size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                    <span className="pbc-label">Patient:</span>
+                    <span className="pbc-value">{booking.patient_name || 'Anonymous'}</span>
+                  </div>
+
+                  {/* Problem */}
+                  {booking.problem && (
+                    <div className="pbc-info-row" style={{ alignItems: 'flex-start' }}>
+                      <FileText size={13} style={{ color: '#64748b', flexShrink: 0, marginTop: '1px' }} />
+                      <span className="pbc-problem">"{booking.problem}"</span>
+                    </div>
+                  )}
+
+                  {/* Cancel button */}
                   <button
-                    className="cancel-btn"
+                    className="pbc-cancel-btn"
                     onClick={() => handleCancelBooking(booking.id)}
-                    title="Cancel Booking Slot"
-                    style={{ padding: '0.35rem' }}
+                    title="Cancel Booking"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
+                    Cancel
                   </button>
                 </div>
               ))

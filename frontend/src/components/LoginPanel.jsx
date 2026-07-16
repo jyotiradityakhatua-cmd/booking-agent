@@ -3,13 +3,13 @@ import { User, Lock, LogIn, UserPlus, Stethoscope, ArrowLeft } from 'lucide-reac
 import { login, signup } from '../utils/api';
 
 export default function LoginPanel({ onLoginSuccess }) {
-  const [role, setRole] = useState(null); // 'patient', 'doctor', or null
+  const [role, setRole] = useState(null); 
   
-  // Separate states for Login form
+
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   
-  // Separate states for Register form
+
   const [regUser, setRegUser] = useState('');
   const [regPass, setRegPass] = useState('');
   
@@ -28,10 +28,10 @@ export default function LoginPanel({ onLoginSuccess }) {
 
     try {
       if (role === 'doctor') {
-        // Doctor bypass authentication
+
         onLoginSuccess(loginUser.trim(), 'doctor');
       } else {
-        // Patient Login
+
         const data = await login(loginUser, loginPass);
         onLoginSuccess(data.username, 'patient');
       }
@@ -52,9 +52,9 @@ export default function LoginPanel({ onLoginSuccess }) {
     setRegisterLoading(true);
 
     try {
-      // Patient Register
+ 
       await signup(regUser, regPass);
-      // Auto login after successful registration!
+
       const data = await login(regUser, regPass);
       onLoginSuccess(data.username, 'patient');
     } catch (err) {
@@ -73,7 +73,6 @@ export default function LoginPanel({ onLoginSuccess }) {
     setRegPass('');
   };
 
-  // Render Role Selection Screen
   if (role === null) {
     return (
       <div className="login-panel-container">
@@ -97,7 +96,7 @@ export default function LoginPanel({ onLoginSuccess }) {
     );
   }
 
-  // Render Doctor Login Screen (Login only, no signup)
+
   if (role === 'doctor') {
     return (
       <div className="login-panel-container">
@@ -161,7 +160,7 @@ export default function LoginPanel({ onLoginSuccess }) {
     );
   }
 
-  // Render Patient Side-by-Side Screen (Register on Left, Login on Right)
+
   return (
     <div className="login-panel-container" style={{ flexDirection: 'column', gap: '1rem', minHeight: 'auto', padding: '1rem 2rem' }}>
       <button className="back-btn" onClick={handleBackToRoles} style={{ alignSelf: 'flex-start', maxWidth: '100px' }}>

@@ -39,7 +39,7 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
 
   const userRole = localStorage.getItem('medsync_role') || 'patient';
 
-  // Load chat history whenever sessionId changes, and poll for updates
+
   useEffect(() => {
     if (!sessionId) return;
 
@@ -90,14 +90,13 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
       const currentCount = messages.length;
       prevMessagesCountRef.current = currentCount;
 
-      // Only scroll if a new message was added or loading state changed
+
       if (currentCount > prevCount || loading) {
         messagesListRef.current.scrollTop = messagesListRef.current.scrollHeight;
       }
     }
   }, [messages, loading]);
 
-  // Set up cancellation/confirmation notifications and banners
   useEffect(() => {
     if (messages.length === 0) {
       setAlertBanner(null);
@@ -188,7 +187,7 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
         setMessages((prev) => [...prev, assistantMsg]);
       }
 
-      // Trigger sidebar updates in real time
+
       if (onBookingConfirmed) {
         onBookingConfirmed();
       }
@@ -215,7 +214,7 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
       const updatedSession = await cancelSessionBooking(sessionId);
       setBookingContext(updatedSession.booking_context || {});
       
-      // Reload history to append the cancellation message bubble
+le
       const data = await getSessionDetail(sessionId);
       const formatted = formatMessages(data.messages, userRole);
       setMessages(formatted);
@@ -238,8 +237,7 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
     try {
       const updatedSession = await rejectSessionBooking(sessionId);
       setBookingContext(updatedSession.booking_context || {});
-      
-      // Reload history to append the rejection message bubble
+
       const data = await getSessionDetail(sessionId);
       const formatted = formatMessages(data.messages, userRole);
       setMessages(formatted);
@@ -263,7 +261,7 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
       const updatedSession = await acceptSessionBooking(sessionId);
       setBookingContext(updatedSession.booking_context || {});
       
-      // Reload history to append the acceptance message bubble
+bble
       const data = await getSessionDetail(sessionId);
       const formatted = formatMessages(data.messages, userRole);
       setMessages(formatted);
