@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, LogIn, UserPlus, Stethoscope, ArrowLeft } from 'lucide-react';
+import { User, Lock, LogIn, UserPlus, Stethoscope, ArrowLeft, Mail } from 'lucide-react';
 import { login, signup } from '../utils/api';
 
 export default function LoginPanel({ onLoginSuccess }) {
@@ -12,6 +12,7 @@ export default function LoginPanel({ onLoginSuccess }) {
 
   const [regUser, setRegUser] = useState('');
   const [regPass, setRegPass] = useState('');
+  const [regEmail, setRegEmail] = useState('');
   
   const [errorMsg, setErrorMsg] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
@@ -44,7 +45,7 @@ export default function LoginPanel({ onLoginSuccess }) {
 
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
-    if (!regUser.trim() || !regPass.trim()) {
+    if (!regUser.trim() || !regPass.trim() || !regEmail.trim()) {
       setErrorMsg('Please fill in all register fields');
       return;
     }
@@ -53,7 +54,7 @@ export default function LoginPanel({ onLoginSuccess }) {
 
     try {
  
-      await signup(regUser, regPass);
+      await signup(regUser, regPass, regEmail.trim());
 
       const data = await login(regUser, regPass);
       onLoginSuccess(data.username, 'patient');
@@ -71,6 +72,7 @@ export default function LoginPanel({ onLoginSuccess }) {
     setLoginPass('');
     setRegUser('');
     setRegPass('');
+    setRegEmail('');
   };
 
   if (role === null) {
@@ -209,6 +211,23 @@ export default function LoginPanel({ onLoginSuccess }) {
                   placeholder="Create password"
                   value={regPass}
                   onChange={(e) => setRegPass(e.target.value)}
+                  disabled={registerLoading}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="reg-email">Email</label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={16} style={{ position: 'absolute', left: '12px', top: '13px', color: 'var(--text-muted)' }} />
+                <input
+                  id="reg-email"
+                  type="email"
+                  className="form-input"
+                  style={{ paddingLeft: '36px', width: '100%' }}
+                  placeholder="Enter email address"
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
                   disabled={registerLoading}
                 />
               </div>

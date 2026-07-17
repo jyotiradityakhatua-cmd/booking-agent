@@ -563,6 +563,7 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
   const [loading, setLoading] = useState(false);
   const [bookingContext, setBookingContext] = useState({});
   const [alertBanner, setAlertBanner] = useState(null);
+  const [modalNotification, setModalNotification] = useState(null);
 
   // Bell notification state: a running list of notices (currently just
   // doctor-initiated cancellations) plus whether there's an unread one.
@@ -706,9 +707,9 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
         setAlertBanner(null);
       }
 
-      // 2. Bell notification scanner: Scan all messages for cancellations
+      // 2. Bell notification scanner: Scan all messages for cancellations & rejections
       const docCancellations = messages.filter(
-        (m) => m.role === 'assistant' && m.content.includes("cancelled by the Doctor")
+        (m) => m.role === 'assistant' && (m.content.includes("cancelled by the Doctor") || m.content.includes("rejected by the Doctor"))
       );
 
       if (docCancellations.length > 0) {
@@ -718,13 +719,17 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
           docCancellations.forEach((msg, idx) => {
             const notifId = `notif-${sessionId}-${idx}`;
             if (!nextNotifs.some((n) => n.id === notifId)) {
+              const msgText = msg.content.includes("rejected") 
+                ? 'Your appointment has been rejected by the Doctor.' 
+                : 'Your appointment has been cancelled by the Doctor.';
               nextNotifs.unshift({
                 id: notifId,
-                message: 'Your appointment has been cancelled by the Doctor.',
+                message: msgText,
                 time: msg.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 read: false,
               });
               updated = true;
+              setModalNotification(msgText);
             }
           });
           return updated ? nextNotifs : prev;
@@ -884,6 +889,69 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
 
   return (
     <div className="glass-panel chat-panel" style={{ height: '100%', position: 'relative' }}>
+      {modalNotification && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '2px solid #ef4444',
+            borderRadius: 'var(--radius-lg)',
+            padding: '2rem',
+            maxWidth: '400px',
+            width: '90%',
+            textAlign: 'center',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+          }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1.25rem',
+              color: '#ef4444'
+            }}>
+              <Bell size={28} />
+            </div>
+            <h3 style={{ color: '#ef4444', fontSize: '1.25rem', marginBottom: '0.75rem', fontWeight: '700' }}>
+              Booking Update
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: '1.5', marginBottom: '1.75rem' }}>
+              {modalNotification}
+            </p>
+            <button
+              type="button"
+              style={{
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: 'var(--radius-md)',
+                padding: '0.65rem 2rem',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s'
+              }}
+              onClick={() => setModalNotification(null)}
+            >
+              Acknowledge
+            </button>
+          </div>
+        </div>
+      )}
       <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div className="avatar-wrapper">
@@ -908,12 +976,6 @@ export default function ChatPanel({ sessionId, username, onBookingConfirmed }) {
             <div 
               className="notif-bell-wrapper" 
               ref={notifDropdownRef}
-              onMouseEnter={() => {
-                setShowNotifications(true);
-                // Mark all notifications as read when hovered
-                setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-              }}
-              onMouseLeave={() => setShowNotifications(false)}
             >
               <button
                 type="button"

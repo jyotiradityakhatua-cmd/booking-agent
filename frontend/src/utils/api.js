@@ -13,11 +13,11 @@ export async function login(username, password) {
   return resp.json();
 }
 
-export async function signup(username, password) {
+export async function signup(username, password, email) {
   const resp = await fetch(`${BASE_URL}/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, email }),
   });
   if (!resp.ok) {
     const errData = await resp.json().catch(() => ({}));

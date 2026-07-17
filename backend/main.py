@@ -1,7 +1,14 @@
 import uuid
 from datetime import date as date_type, datetime, time, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
+import logging
+from dotenv import load_dotenv
 
-from fastapi import FastAPI, HTTPException, Query, Response
+
+from fastapi import FastAPI, HTTPException, Query, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -18,6 +25,54 @@ from schemas import (
     SessionInfo,
 )
 from agent_core import new_conversation, run_agent_turn
+
+logger = logging.getLogger("clinic_smtp")
+logging.basicConfig(level=logging.INFO)
+load_dotenv()
+def send_cancellation_email_sync(to_email: str, date_str: str, time_slot: str):
+    smtp_host = os.getenv("SMTP_HOST", "localhost")
+    try:
+        smtp_port = int(os.getenv("SMTP_PORT", "1025"))
+    except ValueError:
+        smtp_port = 1025
+    smtp_username = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    if smtp_password:
+        smtp_password = smtp_password.replace(" ", "")
+    smtp_sender = os.getenv("SMTP_SENDER", "noreply@clinic.com")
+    
+    msg = MIMEMultipart()
+    msg['From'] = smtp_sender
+    msg['To'] = to_email
+    msg['Subject'] = "Appointment Cancellation Notice"
+    
+    body = f"""Dear Patient,
+
+We regret to inform you that your appointment scheduled for {date_str} at {time_slot} has been cancelled by the doctor.
+
+If you have any questions or would like to reschedule, please log in to the portal or contact support.
+
+Best regards,
+Clinic Administration"""
+    
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+            if smtp_port == 587 or os.getenv("SMTP_USE_STARTTLS", "false").lower() == "true":
+                server.starttls()
+        
+        if smtp_username and smtp_password:
+            server.login(smtp_username, smtp_password)
+            
+        server.sendmail(smtp_sender, [to_email], msg.as_string())
+        server.quit()
+        logger.info(f"Cancellation email successfully sent to {to_email}")
+    except Exception as e:
+        logger.error(f"Failed to send cancellation email to {to_email} via SMTP: {e}")
 
 
 CLINIC_OPEN = time(9, 0)
@@ -198,9 +253,11 @@ def book_slot(req: BookingRequest):
 
 @app.get("/bookings")
 def list_bookings(
+    response: Response,
     date: str | None = Query(None, description="Optional date filter in YYYY-MM-DD format"),
     username: str | None = Query(None, description="Optional username filter")
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
 
     with get_conn() as conn:
         query = "SELECT * FROM bookings WHERE 1=1"
@@ -247,7 +304,7 @@ def cancel_booking_in_sessions(conn, date: str, time_slot: str, username: str, i
 
 
 @app.delete("/bookings/{booking_id}", response_model=CancelResponse)
-def cancel_booking(booking_id: int, role: str = Query("patient")):
+def cancel_booking(booking_id: int, background_tasks: BackgroundTasks, role: str = Query("patient")):
     with get_conn() as conn:
         booking = conn.execute(
             "SELECT date, time_slot, username FROM bookings WHERE id = ?", (booking_id,)
@@ -257,6 +314,11 @@ def cancel_booking(booking_id: int, role: str = Query("patient")):
             
         initiated_by_doctor = (role == "doctor")
         cancel_booking_in_sessions(conn, booking["date"], booking["time_slot"], booking["username"], initiated_by_doctor=initiated_by_doctor)
+        
+        if initiated_by_doctor:
+            user_row = conn.execute("SELECT email FROM users WHERE username = ?", (booking["username"],)).fetchone()
+            if user_row and user_row["email"]:
+                background_tasks.add_task(send_cancellation_email_sync, user_row["email"], booking["date"], booking["time_slot"])
         
         conn.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))
         conn.commit()
@@ -369,6 +431,7 @@ def save_db_session(session: dict):
             INSERT INTO sessions (session_id, username, title, messages_json, booking_context_json, last_checked_date, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id) DO UPDATE SET
+                username = excluded.username,
                 title = excluded.title,
                 messages_json = excluded.messages_json,
                 booking_context_json = excluded.booking_context_json,
@@ -411,7 +474,7 @@ def signup(req: SignupRequest):
         existing = conn.execute("SELECT username FROM users WHERE username = ?", (req.username.strip(),)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Username already exists")
-        conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (req.username.strip(), req.password))
+        conn.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)", (req.username.strip(), req.password, req.email.strip()))
         conn.commit()
     return {"status": "success"}
 
@@ -431,7 +494,8 @@ def login(req: LoginRequest):
 
 
 @app.get("/sessions", response_model=list[SessionInfo])
-def get_user_sessions(username: str | None = Query(None)):
+def get_user_sessions(response: Response, username: str | None = Query(None)):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     with get_conn() as conn:
         if username:
             rows = conn.execute(
@@ -483,6 +547,8 @@ def chat_endpoint(req: ChatRequest):
         if session is None:
             raise HTTPException(status_code=404, detail="Unknown session_id.")
         session_id = req.session_id
+        if username != "guest":
+            session["username"] = username
     else:
         session_id = str(uuid.uuid4())
         messages = new_conversation()
@@ -521,7 +587,8 @@ def chat_endpoint(req: ChatRequest):
 
 
 @app.get("/session/{session_id}")
-def get_session_detail(session_id: str):
+def get_session_detail(session_id: str, response: Response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     session = load_db_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -571,7 +638,7 @@ def cancel_session_booking(session_id: str):
 
 
 @app.post("/session/{session_id}/reject")
-def reject_session_booking(session_id: str):
+def reject_session_booking(session_id: str, background_tasks: BackgroundTasks):
     session = load_db_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -583,6 +650,10 @@ def reject_session_booking(session_id: str):
     with get_conn() as conn:
         if date and time_slot:
             conn.execute("DELETE FROM bookings WHERE date = ? AND time_slot = ?", (date, time_slot))
+            
+            user_row = conn.execute("SELECT email FROM users WHERE username = ?", (session["username"],)).fetchone()
+            if user_row and user_row["email"]:
+                background_tasks.add_task(send_cancellation_email_sync, user_row["email"], date, time_slot)
         
         session["booking_context"] = {
             "date": None,

@@ -65,6 +65,7 @@ function App() {
               read: false,
             });
             updatedNotifs = true;
+            alert(`Your appointment on ${booking.date} @ ${booking.time_slot} has been cancelled by the Doctor.`);
           }
         }
       });

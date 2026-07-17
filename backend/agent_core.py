@@ -1448,12 +1448,16 @@ def normalize_time_slot(value) -> str | None:
     if m:
         hour = int(m.group(1))
         minute = int(m.group(2))
+        if 1 <= hour <= 8:
+            hour += 12
         if 0 <= hour <= 23 and 0 <= minute <= 59:
             return f"{hour:02d}:{minute:02d}"
 
 
     if v.isdigit():
         hour = int(v)
+        if 1 <= hour <= 8:
+            hour += 12
         if 0 <= hour <= 23:
             return f"{hour:02d}:00"
 

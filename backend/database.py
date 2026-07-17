@@ -17,6 +17,11 @@ def init_db():
             """
         )
 
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (

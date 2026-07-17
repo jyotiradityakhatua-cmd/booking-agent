@@ -59,6 +59,7 @@ class LoginRequest(BaseModel):
 class SignupRequest(BaseModel):
     username: str
     password: str
+    email: str
 
 
 class SessionInfo(BaseModel):
