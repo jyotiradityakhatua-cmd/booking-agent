@@ -4,6 +4,7 @@ import ChatPanel from './components/ChatPanel';
 import LoginPanel from './components/LoginPanel';
 import DoctorDashboard from './components/DoctorDashboard';
 import { getSessions, deleteSession, startSession, getBookings, cancelBooking } from './utils/api';
+import './bell.css';
 
 function App() {
   const [user, setUser] = useState(() => localStorage.getItem('medsync_user'));
@@ -19,6 +20,64 @@ function App() {
 
   const sessionsRef = useRef(sessions);
   const activeSessionIdRef = useRef(activeSessionId);
+
+  // Refs for tracking previous bookings and manual cancellations
+  const prevBookingsRef = useRef([]);
+  const patientCancelledBookingIdsRef = useRef(new Set());
+
+  // Compare bookings to detect doctor-initiated cancellations
+  useEffect(() => {
+    if (role !== 'patient' || !user) {
+      prevBookingsRef.current = bookings;
+      return;
+    }
+
+    if (bookings.length === 0 && prevBookingsRef.current.length === 0) {
+      prevBookingsRef.current = bookings;
+      return;
+    }
+
+    // Detect if any booking in prevBookingsRef is missing in the new bookings list
+    const missingBookings = prevBookingsRef.current.filter(
+      (prevB) => !bookings.some((b) => b.id === prevB.id)
+    );
+
+    if (missingBookings.length > 0) {
+      let updatedNotifs = false;
+      const key = `medsync_notifs_${user}`;
+      let storedNotifs = [];
+      try {
+        const stored = localStorage.getItem(key);
+        storedNotifs = stored ? JSON.parse(stored) : [];
+      } catch (e) {
+        storedNotifs = [];
+      }
+
+      missingBookings.forEach((booking) => {
+        // Only trigger if this booking was NOT cancelled by the patient
+        if (!patientCancelledBookingIdsRef.current.has(booking.id)) {
+          const notifId = `cancel-booking-${booking.id}`;
+          if (!storedNotifs.some((n) => n.id === notifId)) {
+            storedNotifs.unshift({
+              id: notifId,
+              message: `Your appointment on ${booking.date} @ ${booking.time_slot} has been cancelled by the Doctor.`,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              read: false,
+            });
+            updatedNotifs = true;
+          }
+        }
+      });
+
+      if (updatedNotifs) {
+        localStorage.setItem(key, JSON.stringify(storedNotifs));
+        // Dispatch custom event to notify ChatPanel to reload notifications
+        window.dispatchEvent(new Event('medsync_notifs_updated'));
+      }
+    }
+
+    prevBookingsRef.current = bookings;
+  }, [bookings, user, role]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -159,6 +218,7 @@ function App() {
       return;
     }
     try {
+      patientCancelledBookingIdsRef.current.add(bookingId);
       await cancelBooking(bookingId, role);
       fetchBookingsList();
       fetchSessionsList(role, user);
